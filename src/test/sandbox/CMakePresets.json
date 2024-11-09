@@ -19,6 +19,14 @@
         "cacheVariables": {
           "CMAKE_BUILD_TYPE": "Release"
         }
+      },
+      {
+        "name": "other",
+        "inherits": "default",
+        "description": "Release build",
+        "cacheVariables": {
+          "CMAKE_BUILD_TYPE": "Release"
+        }
       }
     ],
     "buildPresets": [
@@ -26,6 +34,18 @@
         "name": "build-release",
         "configurePreset": "release",
         "description": "Builds the project in release mode",
+        "targets": [
+          "MyProject"
+        ],
+        "jobs": 4
+      },
+      {
+        "name": "build-other",
+        "configurePreset": "other",
+        "description": "Builds the project in release mode",
+        "targets": [
+          "MyProjectTests"
+        ],
         "jobs": 4
       }
     ],
@@ -47,7 +67,7 @@
         "generators": [
           "ZIP"
         ]
-      }
+      }    
     ]
   }
   
