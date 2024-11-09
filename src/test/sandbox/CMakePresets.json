@@ -1,0 +1,53 @@
+{
+    "version": 8,
+    "cmakeMinimumRequired": {
+      "major": 3,
+      "minor": 19,
+      "patch": 0
+    },
+    "configurePresets": [
+      {
+        "name": "default",
+        "hidden": true,
+        "generator": "Ninja",
+        "binaryDir": "${sourceDir}/../../../build/default"
+      },
+      {
+        "name": "release",
+        "inherits": "default",
+        "description": "Release build",
+        "cacheVariables": {
+          "CMAKE_BUILD_TYPE": "Release"
+        }
+      }
+    ],
+    "buildPresets": [
+      {
+        "name": "build-release",
+        "configurePreset": "release",
+        "description": "Builds the project in release mode",
+        "jobs": 4
+      }
+    ],
+    "testPresets": [
+      {
+        "name": "run-tests",
+        "configurePreset": "release",
+        "description": "Runs the tests after building",
+        "output": {
+          "outputOnFailure": true
+        }
+      }
+    ],
+    "packagePresets": [
+      {
+        "name": "package-release",
+        "configurePreset": "release",
+        "description": "Package the release build",
+        "generators": [
+          "ZIP"
+        ]
+      }
+    ]
+  }
+  
