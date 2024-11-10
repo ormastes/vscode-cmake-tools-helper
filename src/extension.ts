@@ -1,172 +1,245 @@
 import * as vscode from 'vscode';
-import { assert } from 'console';
+import * as assert from 'assert';
 
-async function syncConfigPreset(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
+/**
+ * Synchronizes the configure preset between the extension's global state and the CMake Tools extension.
+ * @param context The extension context.
+ * @param cmakeToolsExtension The CMake Tools extension.
+ */
+async function syncConfigPreset(
+	context: vscode.ExtensionContext,
+	cmakeToolsExtension: vscode.Extension<any>
+) {
+	// Activate the CMake Tools extension and get its API
 	const cmakeHandle = await cmakeToolsExtension.activate();
 	const cmakeApi = await cmakeHandle.getApi();
-	const cmakeManger = cmakeApi.manager;
-	const cmakeProject = cmakeManger.getActiveProject();
+	const cmakeManager = cmakeApi.manager;
+	const cmakeProject = cmakeManager.getActiveProject();
+
+	if (!cmakeProject) {
+		vscode.window.showErrorMessage('No active CMake project found.');
+		return;
+	}
+
 	const presetsController = cmakeProject.presetsController;
 	const currentConfigPreset = cmakeProject.configurePreset;
 	const currentConfigPresetName = currentConfigPreset ? currentConfigPreset.name : null;
 	const storedConfigPreset = context.globalState.get<string>('activeConfigPreset');
 	const allPresets: any[] = await presetsController.getAllConfigurePresets();
-	
-	// case allPresets is empty: register onActivePackagePresetChanged 
+
+	// If no configure presets are available, return
 	if (allPresets.length === 0) {
 		return;
 	}
 
 	if (storedConfigPreset !== currentConfigPresetName) {
-
 		if (storedConfigPreset && allPresets.some(preset => preset.name === storedConfigPreset)) {
-			// case storedConfigPreset in allPresets: use storedConfigPreset 
-			//// case and currentConfigPreset not exist : does care
-			//// case and currentConfigPreset exist : does care
+			// Use the stored preset if it exists in the available presets
 			await cmakeProject.setConfigurePreset(storedConfigPreset);
 		} else {
-			// case storedConfigPreset not exist or storedConfigPreset not in allPresets
-			if (currentConfigPreset) {
-				//// case and currentConfigPreset not exist : use first preset and update storedConfigPreset
+			if (currentConfigPresetName) {
+				// Update stored preset with current preset
 				context.globalState.update('activeConfigPreset', currentConfigPresetName);
-			} else if (allPresets.length > 0) {
-				//// case and currentConfigPreset exist : update storedConfigPreset with currentConfigPreset
-				await cmakeProject.setConfigurePreset(allPresets[0].name);
-				context.globalState.update('activeConfigPreset', allPresets[0].name);
+			} else {
+				// Set to the first available preset and update stored preset
+				const firstPresetName = allPresets[0].name;
+				await cmakeProject.setConfigurePreset(firstPresetName);
+				context.globalState.update('activeConfigPreset', firstPresetName);
 			}
 		}
 	}
 
-	let finalConfigPreset = context.globalState.get<string>('activeConfigPreset');
+	const finalConfigPreset = context.globalState.get<string>('activeConfigPreset');
 	if (finalConfigPreset) {
-		syncBuildPreset(context, cmakeToolsExtension, cmakeProject, finalConfigPreset);
+		await syncBuildPreset(context, cmakeToolsExtension, cmakeProject, finalConfigPreset);
 	} else {
-		assert(false, 'activeConfigPreset is null');
+		assert.ok(false, 'activeConfigPreset is null');
 	}
 }
 
-async function syncBuildPreset(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>, cmakeProject: any, currentConfigPresetName: string) {
+/**
+ * Synchronizes the build preset based on the active configure preset.
+ * @param context The extension context.
+ * @param cmakeToolsExtension The CMake Tools extension.
+ * @param cmakeProject The active CMake project.
+ * @param currentConfigPresetName The name of the current configure preset.
+ */
+async function syncBuildPreset(
+	context: vscode.ExtensionContext,
+	cmakeToolsExtension: vscode.Extension<any>,
+	cmakeProject: any,
+	currentConfigPresetName: string
+) {
 	const presetsController = cmakeProject.presetsController;
 	const currentBuildPreset = cmakeProject.buildPreset;
 	const currentBuildPresetName = currentBuildPreset ? currentBuildPreset.name : null;
 	const storedBuildPreset = context.globalState.get<string>('activeBuildPreset');
-	const _allPresets: any[] = await presetsController.getAllBuildPresets();
+	const allBuildPresets: any[] = await presetsController.getAllBuildPresets();
 
-	// case allPresets is empty: register onActivePackagePresetChanged 
-	if (_allPresets.length === 0) {
+	// If no build presets are available, return
+	if (allBuildPresets.length === 0) {
 		return;
 	}
 
 	if (storedBuildPreset === currentBuildPresetName) {
-		return;
-	}
-	// Filtering out the presets that are not match configuration type
-	const allPresets = _allPresets.filter(preset => {
-		return preset.configurePreset === currentConfigPresetName;
-	});
-	// case allPresets is empty
-	if (allPresets.length === 0) {
+		// Presets are already synchronized
 		return;
 	}
 
-	if (storedBuildPreset && allPresets.some(preset => preset.name === storedBuildPreset)) {
-		// case storedConfigPreset in allPresets: use storedConfigPreset 
-		//// case and currentConfigPreset not exist : does care
-		//// case and currentConfigPreset exist : does care
+	// Filter build presets that match the current configure preset
+	const matchingBuildPresets = allBuildPresets.filter(
+		preset => preset.configurePreset === currentConfigPresetName
+	);
+
+	// If no matching build presets are found, return
+	if (matchingBuildPresets.length === 0) {
+		return;
+	}
+
+	if (storedBuildPreset && matchingBuildPresets.some(preset => preset.name === storedBuildPreset)) {
+		// Use the stored build preset if it exists in the available presets
 		await cmakeProject.setBuildPreset(storedBuildPreset);
 	} else {
-		// case storedConfigPreset not exist or storedConfigPreset not in allPresets
-		if (storedBuildPreset) {
-			//// case and currentConfigPreset not exist : use first preset and update storedConfigPreset
+		if (currentBuildPresetName) {
+			// Update stored build preset with current build preset
 			context.globalState.update('activeBuildPreset', currentBuildPresetName);
-		} else if (allPresets.length > 0) {
-			//// case and currentConfigPreset exist : update storedConfigPreset with currentConfigPreset
-			await cmakeProject.setBuildPreset(allPresets[0].name);
-			context.globalState.update('activeBuildPreset', allPresets[0].name);
+		} else {
+			// Set to the first available matching build preset and update stored preset
+			const firstPresetName = matchingBuildPresets[0].name;
+			await cmakeProject.setBuildPreset(firstPresetName);
+			context.globalState.update('activeBuildPreset', firstPresetName);
 		}
 	}
 }
-// onBeforeAddFolder => onActiveProjectChanged => onActivePackagePresetChanged
 
-async function registerOnBeforeAddFolder(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
+/**
+ * Registers an event handler for when a new folder is added.
+ * @param context The extension context.
+ * @param cmakeToolsExtension The CMake Tools extension.
+ */
+async function registerOnBeforeAddFolder(
+	context: vscode.ExtensionContext,
+	cmakeToolsExtension: vscode.Extension<any>
+) {
 	const apiHandle = await cmakeToolsExtension.activate();
 	const cmakeApi = await apiHandle.getApi();
-	const cmakeManger = cmakeApi.manager;
-	const cmakeProject = cmakeManger.getActiveProject();
+	const cmakeManager = cmakeApi.manager;
+	const cmakeProject = cmakeManager.getActiveProject();
 	const projectController = cmakeProject.projectController;
-	const onBeforeAddFolder = projectController.onBeforeAddFolder(async (folderProjectMap: any) => {
-		registerOnActiveProjectChanged(context, cmakeToolsExtension);
+
+	const disposable = projectController.onBeforeAddFolder(async (folderProjectMap: any) => {
+		await registerOnActiveProjectChanged(context, cmakeToolsExtension);
 	});
-	context.subscriptions.push(onBeforeAddFolder);
+	context.subscriptions.push(disposable);
 }
-async function registerOnActiveProjectChanged(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
+
+/**
+ * Registers an event handler for when the active CMake project changes.
+ * @param context The extension context.
+ * @param cmakeToolsExtension The CMake Tools extension.
+ */
+async function registerOnActiveProjectChanged(
+	context: vscode.ExtensionContext,
+	cmakeToolsExtension: vscode.Extension<any>
+) {
 	const apiHandle = await cmakeToolsExtension.activate();
 	const cmakeApi = await apiHandle.getApi();
 
-	const onBeforeAddFolder = cmakeApi.onActiveProjectChanged( async (folderProjectMap: any) => {
-		registerOnActiveConfigPresetChanged(context, cmakeToolsExtension);
+	const disposable = cmakeApi.onActiveProjectChanged(async (folderProjectMap: any) => {
+		await registerOnActiveConfigPresetChanged(context, cmakeToolsExtension);
 	});
-	context.subscriptions.push(onBeforeAddFolder);
+	context.subscriptions.push(disposable);
 }
-async function registerOnActiveConfigPresetChanged(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
+
+/**
+ * Registers an event handler for when the active configure preset changes.
+ * @param context The extension context.
+ * @param cmakeToolsExtension The CMake Tools extension.
+ */
+async function registerOnActiveConfigPresetChanged(
+	context: vscode.ExtensionContext,
+	cmakeToolsExtension: vscode.Extension<any>
+) {
 	const apiHandle = await cmakeToolsExtension.activate();
 	const cmakeApi = await apiHandle.getApi();
-	const cmakeManger = cmakeApi.manager;
-	const cmakeProject = cmakeManger.getActiveProject();
-	const onActivePackagePresetChanged = cmakeProject.onActiveConfigurePresetChanged(async (configType: any) => {
-		const apiHandle = await cmakeToolsExtension.activate();
-		const cmakeApi = await apiHandle.getApi();
-		const cmakeManger = cmakeApi.manager;
-		const cmakeProject = cmakeManger.getActiveProject();
+	const cmakeManager = cmakeApi.manager;
+	const cmakeProject = cmakeManager.getActiveProject();
+
+	const disposable = cmakeProject.onActiveConfigurePresetChanged(async () => {
 		const currentConfigPreset = cmakeProject.configurePreset;
 		const currentConfigPresetName = currentConfigPreset ? currentConfigPreset.name : null;
 		context.globalState.update('activeConfigPreset', currentConfigPresetName);
 	});
-	context.subscriptions.push(onActivePackagePresetChanged);
+	context.subscriptions.push(disposable);
 }
-async function registerOnActiveBuildPresetChanged(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
+
+/**
+ * Registers an event handler for when the active build preset changes.
+ * @param context The extension context.
+ * @param cmakeToolsExtension The CMake Tools extension.
+ */
+async function registerOnActiveBuildPresetChanged(
+	context: vscode.ExtensionContext,
+	cmakeToolsExtension: vscode.Extension<any>
+) {
 	const apiHandle = await cmakeToolsExtension.activate();
 	const cmakeApi = await apiHandle.getApi();
-	const cmakeManger = cmakeApi.manager;
-	const cmakeProject = cmakeManger.getActiveProject();
-	const onActivePackagePresetChanged = cmakeProject.onActiveBuildPresetChanged(async (configType: any) => {
-		const apiHandle = await cmakeToolsExtension.activate();
-		const cmakeApi = await apiHandle.getApi();
-		const cmakeManger = cmakeApi.manager;
-		const cmakeProject = cmakeManger.getActiveProject();
+	const cmakeManager = cmakeApi.manager;
+	const cmakeProject = cmakeManager.getActiveProject();
+
+	const disposable = cmakeProject.onActiveBuildPresetChanged(async () => {
 		const currentBuildPreset = cmakeProject.buildPreset;
 		const currentBuildPresetName = currentBuildPreset ? currentBuildPreset.name : null;
 		context.globalState.update('activeBuildPreset', currentBuildPresetName);
 	});
-	context.subscriptions.push(onActivePackagePresetChanged);
+	context.subscriptions.push(disposable);
 }
 
-async function activateCMakeTools(context: vscode.ExtensionContext, is_initial_activation: boolean = false) {
-    const cmakeToolsExtension = vscode.extensions.getExtension('ms-vscode.cmake-tools');
-    if (!cmakeToolsExtension) {
-        vscode.window.showErrorMessage('CMake Tools extension is not installed.');
-        return;
-    }
+/**
+ * Activates the CMake Tools extension and registers necessary event handlers.
+ * @param context The extension context.
+ * @param isInitialActivation Whether this is the initial activation.
+ */
+async function activateCMakeTools(
+	context: vscode.ExtensionContext,
+	isInitialActivation: boolean = false
+) {
+	const cmakeToolsExtension = vscode.extensions.getExtension('ms-vscode.cmake-tools');
+	if (!cmakeToolsExtension) {
+		vscode.window.showErrorMessage('CMake Tools extension is not installed.');
+		return;
+	}
 	if (!cmakeToolsExtension.isActive) {
-        await cmakeToolsExtension.activate();
-    }
-	registerOnBeforeAddFolder(context, cmakeToolsExtension);
-	registerOnActiveProjectChanged(context, cmakeToolsExtension);
-	registerOnActiveConfigPresetChanged(context, cmakeToolsExtension);
-	registerOnActiveBuildPresetChanged(context, cmakeToolsExtension);
+		await cmakeToolsExtension.activate();
+	}
 
-	syncConfigPreset(context, cmakeToolsExtension);
+	await registerOnBeforeAddFolder(context, cmakeToolsExtension);
+	await registerOnActiveProjectChanged(context, cmakeToolsExtension);
+	await registerOnActiveConfigPresetChanged(context, cmakeToolsExtension);
+	await registerOnActiveBuildPresetChanged(context, cmakeToolsExtension);
+
+	await syncConfigPreset(context, cmakeToolsExtension);
 }
 
-
-
+/**
+ * The activate function is called when the extension is activated.
+ * @param context The extension context.
+ */
 export function activate(context: vscode.ExtensionContext) {
-    vscode.extensions.onDidChange(() => {
-        const cmakeToolsExtension = vscode.extensions.getExtension('ms-vscode.cmake-tools');
-        if (cmakeToolsExtension && !cmakeToolsExtension.isActive) {
-            activateCMakeTools(context);
-        }
+	// Register the refresh command
+    const refreshCommand = vscode.commands.registerCommand('vscode-cmake-tools-helper.refresh', () => {
+        vscode.window.showInformationMessage('CMake Tools Helper: Refresh command executed');
+        activateCMakeTools(context);
     });
+	context.subscriptions.push(refreshCommand);
+	
+	// Listen for changes in extensions to detect when CMake Tools is activated
+	vscode.extensions.onDidChange(() => {
+		const cmakeToolsExtension = vscode.extensions.getExtension('ms-vscode.cmake-tools');
+		if (cmakeToolsExtension && !cmakeToolsExtension.isActive) {
+			activateCMakeTools(context);
+		}
+	});
 
-    activateCMakeTools(context, true);
+	activateCMakeTools(context, true);
 }

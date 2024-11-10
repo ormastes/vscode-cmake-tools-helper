@@ -1,13 +1,14 @@
 {
   "name": "vscode-cmake-tools-helper",
   "displayName": "vscode-cmake-tools-helper",
-  "description": "add some missing feature on vscode-cmake-tools and hope embedded to vscode-cmake-tools in future.",
+  "publisher": "Yoon, Jonghyun",
+  "description": "Adds additional features to the vscode-cmake-tools extension, such as synchronizing configure and build presets.",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.95.0"
   },
   "categories": [
-    "Other"
+    "Programming Languages"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
@@ -15,7 +16,7 @@
     }
   },
   "activationEvents": [
-    "*"
+    "onStartupFinished"
   ],
   "extensionDependencies": [
     "ms-vscode.cmake-tools"
@@ -24,8 +25,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "vscode-cmake-tools-helper.helloWorld",
-        "title": "Hello World"
+      "command": "vscode-cmake-tools-helper.refresh",
+      "title": "Refresh CMake Tools Helper"
       }
     ]
   },
