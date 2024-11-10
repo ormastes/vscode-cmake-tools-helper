@@ -1,34 +1,12 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
-
-async function onProjectLoaded(context: vscode.ExtensionContext, project: any) {
-    const storedConfigPreset = context.globalState.get<string>('activeConfigPreset');
-
-    if (storedConfigPreset) {
-        await project.setConfigurePreset(storedConfigPreset);
-    }
-
-    if (project.onActiveConfigurePresetChanged) {
-        const configPresetChangedDisposable = project.onActiveConfigurePresetChanged(async (presetName: string | null) => {
-            await context.globalState.update('activeConfigPreset', presetName);
-
-            if (presetName) {
-                await updateBuildPreset(project, presetName);
-            }
-        });
-
-        context.subscriptions.push(configPresetChangedDisposable);
-    } else {
-        vscode.window.showErrorMessage('onActiveConfigurePresetChanged event is not supported in this version of CMake Tools.');
-    }
-}
+import { assert } from 'console';
 
 async function syncConfigPreset(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
-	let cmakeHandle = await cmakeToolsExtension.activate();
-	let cmakeApi = await cmakeHandle.getApi();
-	let cmakeManger = cmakeApi.manager;
+	const cmakeHandle = await cmakeToolsExtension.activate();
+	const cmakeApi = await cmakeHandle.getApi();
+	const cmakeManger = cmakeApi.manager;
 	const cmakeProject = cmakeManger.getActiveProject();
-	let presetsController = cmakeProject.presetsController;
+	const presetsController = cmakeProject.presetsController;
 	const currentConfigPreset = cmakeProject.configurePreset;
 	const currentConfigPresetName = currentConfigPreset ? currentConfigPreset.name : null;
 	const storedConfigPreset = context.globalState.get<string>('activeConfigPreset');
@@ -39,24 +17,72 @@ async function syncConfigPreset(context: vscode.ExtensionContext, cmakeToolsExte
 		return;
 	}
 
-	if (storedConfigPreset === currentConfigPresetName) {
+	if (storedConfigPreset !== currentConfigPresetName) {
+
+		if (storedConfigPreset && allPresets.some(preset => preset.name === storedConfigPreset)) {
+			// case storedConfigPreset in allPresets: use storedConfigPreset 
+			//// case and currentConfigPreset not exist : does care
+			//// case and currentConfigPreset exist : does care
+			await cmakeProject.setConfigurePreset(storedConfigPreset);
+		} else {
+			// case storedConfigPreset not exist or storedConfigPreset not in allPresets
+			if (currentConfigPreset) {
+				//// case and currentConfigPreset not exist : use first preset and update storedConfigPreset
+				context.globalState.update('activeConfigPreset', currentConfigPresetName);
+			} else if (allPresets.length > 0) {
+				//// case and currentConfigPreset exist : update storedConfigPreset with currentConfigPreset
+				await cmakeProject.setConfigurePreset(allPresets[0].name);
+				context.globalState.update('activeConfigPreset', allPresets[0].name);
+			}
+		}
+	}
+
+	let finalConfigPreset = context.globalState.get<string>('activeConfigPreset');
+	if (finalConfigPreset) {
+		syncBuildPreset(context, cmakeToolsExtension, cmakeProject, finalConfigPreset);
+	} else {
+		assert(false, 'activeConfigPreset is null');
+	}
+}
+
+async function syncBuildPreset(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>, cmakeProject: any, currentConfigPresetName: string) {
+	const presetsController = cmakeProject.presetsController;
+	const currentBuildPreset = cmakeProject.buildPreset;
+	const currentBuildPresetName = currentBuildPreset ? currentBuildPreset.name : null;
+	const storedBuildPreset = context.globalState.get<string>('activeBuildPreset');
+	const _allPresets: any[] = await presetsController.getAllBuildPresets();
+
+	// case allPresets is empty: register onActivePackagePresetChanged 
+	if (_allPresets.length === 0) {
 		return;
 	}
 
-	if (storedConfigPreset && allPresets.some(preset => preset.name === storedConfigPreset)) {
+	if (storedBuildPreset === currentBuildPresetName) {
+		return;
+	}
+	// Filtering out the presets that are not match configuration type
+	const allPresets = _allPresets.filter(preset => {
+		return preset.configurePreset === currentConfigPresetName;
+	});
+	// case allPresets is empty
+	if (allPresets.length === 0) {
+		return;
+	}
+
+	if (storedBuildPreset && allPresets.some(preset => preset.name === storedBuildPreset)) {
 		// case storedConfigPreset in allPresets: use storedConfigPreset 
 		//// case and currentConfigPreset not exist : does care
 		//// case and currentConfigPreset exist : does care
-		await cmakeProject.setConfigurePreset(storedConfigPreset);
+		await cmakeProject.setBuildPreset(storedBuildPreset);
 	} else {
 		// case storedConfigPreset not exist or storedConfigPreset not in allPresets
-		if (currentConfigPreset) {
+		if (storedBuildPreset) {
 			//// case and currentConfigPreset not exist : use first preset and update storedConfigPreset
-			context.globalState.update('activeConfigPreset', currentConfigPresetName);
+			context.globalState.update('activeBuildPreset', currentBuildPresetName);
 		} else if (allPresets.length > 0) {
 			//// case and currentConfigPreset exist : update storedConfigPreset with currentConfigPreset
-			await cmakeProject.setConfigurePreset(allPresets[0].name);
-			context.globalState.update('activeConfigPreset', allPresets[0].name);
+			await cmakeProject.setBuildPreset(allPresets[0].name);
+			context.globalState.update('activeBuildPreset', allPresets[0].name);
 		}
 	}
 }
@@ -66,7 +92,9 @@ async function registerOnBeforeAddFolder(context: vscode.ExtensionContext, cmake
 	const apiHandle = await cmakeToolsExtension.activate();
 	const cmakeApi = await apiHandle.getApi();
 	const cmakeManger = cmakeApi.manager;
-	const onBeforeAddFolder = cmakeManger.onBeforeAddFolder((folderProjectMap: any) => {
+	const cmakeProject = cmakeManger.getActiveProject();
+	const projectController = cmakeProject.projectController;
+	const onBeforeAddFolder = projectController.onBeforeAddFolder(async (folderProjectMap: any) => {
 		registerOnActiveProjectChanged(context, cmakeToolsExtension);
 	});
 	context.subscriptions.push(onBeforeAddFolder);
@@ -74,18 +102,18 @@ async function registerOnBeforeAddFolder(context: vscode.ExtensionContext, cmake
 async function registerOnActiveProjectChanged(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
 	const apiHandle = await cmakeToolsExtension.activate();
 	const cmakeApi = await apiHandle.getApi();
-	const cmakeManger = cmakeApi.manager;
-	const onBeforeAddFolder = cmakeManger.OnActiveProjectChanged((folderProjectMap: any) => {
-		registerOnActivePackagePresetChanged(context, cmakeToolsExtension);
+
+	const onBeforeAddFolder = cmakeApi.onActiveProjectChanged( async (folderProjectMap: any) => {
+		registerOnActiveConfigPresetChanged(context, cmakeToolsExtension);
 	});
 	context.subscriptions.push(onBeforeAddFolder);
 }
-async function registerOnActivePackagePresetChanged(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
+async function registerOnActiveConfigPresetChanged(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
 	const apiHandle = await cmakeToolsExtension.activate();
 	const cmakeApi = await apiHandle.getApi();
 	const cmakeManger = cmakeApi.manager;
 	const cmakeProject = cmakeManger.getActiveProject();
-	const onActivePackagePresetChanged = cmakeProject.onSelectedConfigurationChangedApiEvent(async (configType: any) => {
+	const onActivePackagePresetChanged = cmakeProject.onActiveConfigurePresetChanged(async (configType: any) => {
 		const apiHandle = await cmakeToolsExtension.activate();
 		const cmakeApi = await apiHandle.getApi();
 		const cmakeManger = cmakeApi.manager;
@@ -96,7 +124,22 @@ async function registerOnActivePackagePresetChanged(context: vscode.ExtensionCon
 	});
 	context.subscriptions.push(onActivePackagePresetChanged);
 }
-
+async function registerOnActiveBuildPresetChanged(context: vscode.ExtensionContext, cmakeToolsExtension: vscode.Extension<any>) {
+	const apiHandle = await cmakeToolsExtension.activate();
+	const cmakeApi = await apiHandle.getApi();
+	const cmakeManger = cmakeApi.manager;
+	const cmakeProject = cmakeManger.getActiveProject();
+	const onActivePackagePresetChanged = cmakeProject.onActiveBuildPresetChanged(async (configType: any) => {
+		const apiHandle = await cmakeToolsExtension.activate();
+		const cmakeApi = await apiHandle.getApi();
+		const cmakeManger = cmakeApi.manager;
+		const cmakeProject = cmakeManger.getActiveProject();
+		const currentBuildPreset = cmakeProject.buildPreset;
+		const currentBuildPresetName = currentBuildPreset ? currentBuildPreset.name : null;
+		context.globalState.update('activeBuildPreset', currentBuildPresetName);
+	});
+	context.subscriptions.push(onActivePackagePresetChanged);
+}
 
 async function activateCMakeTools(context: vscode.ExtensionContext, is_initial_activation: boolean = false) {
     const cmakeToolsExtension = vscode.extensions.getExtension('ms-vscode.cmake-tools');
@@ -104,36 +147,18 @@ async function activateCMakeTools(context: vscode.ExtensionContext, is_initial_a
         vscode.window.showErrorMessage('CMake Tools extension is not installed.');
         return;
     }
+	if (!cmakeToolsExtension.isActive) {
+        await cmakeToolsExtension.activate();
+    }
 	registerOnBeforeAddFolder(context, cmakeToolsExtension);
 	registerOnActiveProjectChanged(context, cmakeToolsExtension);
-	registerOnActivePackagePresetChanged(context, cmakeToolsExtension);
+	registerOnActiveConfigPresetChanged(context, cmakeToolsExtension);
+	registerOnActiveBuildPresetChanged(context, cmakeToolsExtension);
 
 	syncConfigPreset(context, cmakeToolsExtension);
 }
 
-async function updateBuildPreset(cmakeProject: any, configPresetName: string) {
-    const cmakePresetsPath = 'path/to/CMakePresets.json';
-    let presetsJson;
 
-    try {
-        const presetsContent = fs.readFileSync(cmakePresetsPath, 'utf8');
-        presetsJson = JSON.parse(presetsContent);
-    } catch (error) {
-        console.error('Error reading CMakePresets.json:', error);
-        return;
-    }
-
-    const buildPresets = presetsJson.buildPresets;
-    if (!buildPresets) {
-        return;
-    }
-
-    const matchingBuildPreset = buildPresets.find((preset: any) => preset.configurePreset === configPresetName);
-
-    if (matchingBuildPreset) {
-        await cmakeProject.setBuildPreset(matchingBuildPreset.name);
-    }
-}
 
 export function activate(context: vscode.ExtensionContext) {
     vscode.extensions.onDidChange(() => {
