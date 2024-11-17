@@ -189,7 +189,23 @@ suite('vscode-cmake-tools-helper Extension Test Suite', () => {
 
 	test('Registers event handlers on activation', async () => {
 		const extension = vscode.extensions.getExtension('your-name.vscode-cmake-tools-helper');
-		const context = { subscriptions: [] } as vscode.ExtensionContext;
+		const context = {
+			subscriptions: [],
+			workspaceState: { get: () => undefined, update: () => Promise.resolve() },
+			globalState: { get: () => undefined, update: () => Promise.resolve() },
+			secrets: { get: () => Promise.resolve(undefined), store: () => Promise.resolve(), delete: () => Promise.resolve() },
+			extensionUri: vscode.Uri.parse(''),
+			environmentVariableCollection: { replace: () => {}, append: () => {}, prepend: () => {}, get: () => undefined, forEach: () => {}, clear: () => {} },
+			storageUri: undefined,
+			globalStorageUri: vscode.Uri.parse(''),
+			logUri: vscode.Uri.parse(''),
+			extensionMode: vscode.ExtensionMode.Test,
+			asAbsolutePath: (path: string) => path,
+			extensionPath: '',
+			globalStoragePath: '',
+			logPath: '',
+			storagePath: undefined
+		} as unknown as vscode.ExtensionContext;
 		assert.ok(extension, 'Extension not found');
 		await extension.activate();
 		const activateFunction = extension.exports.activate;
@@ -221,7 +237,23 @@ suite('vscode-cmake-tools-helper Extension Test Suite', () => {
 			return { dispose: () => { } };
 		};
 
-		const context = { subscriptions: [] } as vscode.ExtensionContext;
+		const context = {
+			subscriptions: [],
+			workspaceState: { get: () => undefined, update: () => Promise.resolve() },
+			globalState: { get: () => undefined, update: () => Promise.resolve() },
+			secrets: { get: () => Promise.resolve(undefined), store: () => Promise.resolve(), delete: () => Promise.resolve() },
+			extensionUri: vscode.Uri.parse(''),
+			environmentVariableCollection: { replace: () => {}, append: () => {}, prepend: () => {}, get: () => undefined, forEach: () => {}, clear: () => {} },
+			storageUri: undefined,
+			globalStorageUri: vscode.Uri.parse(''),
+			logUri: vscode.Uri.parse(''),
+			extensionMode: vscode.ExtensionMode.Test,
+			asAbsolutePath: (path: string) => path,
+			extensionPath: '',
+			globalStoragePath: '',
+			logPath: '',
+			storagePath: undefined
+		} as unknown as vscode.ExtensionContext;
 		const activateFunction = extension.exports.activate;
 
 		await activateFunction(context);
